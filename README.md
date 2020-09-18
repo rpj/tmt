@@ -6,11 +6,11 @@ A single-file, [no-dependency](http://vanilla-js.com/), locally-runnable tool fo
 
 ### Locally
 
-Just clone this repository and open `index.html`. That's it.
+[Download `index.html`](https://raw.githubusercontent.com/rpj/tmt/main/index.html) and open it. That's it.
 
 ### Online
 
-[Here](https://tmt.computerpho.be/)
+At [GitHub Pages](https://rpj.github.io/tmt/) or [itch.io](https://rpjsf.itch.io/tmt/).
 
 ## Screenshots
 

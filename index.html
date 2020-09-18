@@ -7,15 +7,7 @@
     <title>TileMapTool</title>
 
     <script>
-      const DEF_CONTROLS = {
-        mult: 2,
-        space: 0,
-        tdim: 16,
-        lw: 1
-      };
-  
-      let controls = JSON.parse(window.localStorage.getItem('controls')) || Object.assign({}, DEF_CONTROLS);
-      let canvas, ctx, og, lastClick, currentMap;
+      let controls, canvas, ctx, og, lastClick, currentMap, annotations, layers = {};
   
       function drawGrid() {
         const LW = controls.lw;
@@ -53,7 +45,9 @@
             ctx.stroke();
           }
         }
-  
+      }
+
+      function drawCursor() {
         if (lastClick) {
           ctx.strokeStyle = 'rgba(64, 255, 64, 0.75)';
           ctx.lineWidth = controls.lw * 2;
@@ -70,43 +64,56 @@
           sCtx.imageSmoothingEnabled = false;
           const sMult = controls.tdim + controls.space;
           sCtx.clearRect(0, 0, sCanvas.width, sCanvas.height);
-          sCtx.drawImage(currentMap, lastClick.x * sMult, lastClick.y * sMult, 
+
+          lastClick.src = {
+            topLeft: { x: lastClick.x * sMult, y: lastClick.y * sMult },
+            botRight: { x: (lastClick.x * sMult) + controls.tdim, y: (lastClick.y * sMult) + controls.tdim }
+          };
+
+          sCtx.drawImage(currentMap, lastClick.src.topLeft.x, lastClick.src.topLeft.y, 
             controls.tdim, controls.tdim, 0, 0, sCanvas.width, sCanvas.height);
-  
-          document.getElementById('debug').innerText = `Src: (${lastClick.x * sMult}, ${lastClick.y * sMult}) to ` +
-            `(${(lastClick.x * sMult) + controls.tdim}, ${(lastClick.y * sMult) + controls.tdim})`;
+
+          const _off = 4;
+          sCtx.fillStyle = 'rgb(10, 10, 64, 1.0)';
+          sCtx.font = '16px monospace';
+          sCtx.textBaseline = 'top';
+          sCtx.textAlign = 'start';
+          sCtx.shadowColor = 'rgb(245, 245, 245, 0.8)';
+          sCtx.shadowOffsetX = sCtx.shadowOffsetY = 2;
+          sCtx.shadowBlur = 2;
+          sCtx.fillText(`${lastClick.src.topLeft.x}, ${lastClick.src.topLeft.y}`, _off, _off);
+
+          sCtx.textBaseline = 'bottom';
+          sCtx.textAlign = 'end';
+          sCtx.fillText(`${lastClick.src.botRight.x}, ${lastClick.src.botRight.y}`,
+            sCanvas.width - _off, sCanvas.height - _off);
+
+          const tLayers = layers[lcTileKey()];
+
+          if (tLayers) {
+            if (tLayers.annotation) {
+              sCtx.font = '20px sans-serif';
+              sCtx.textBaseline = 'bottom';
+              sCtx.textAlign = 'start';
+              const tileName = annotations[tLayers.annotation.subType][lcTileKey()].name;
+
+              let str = `${tLayers.annotation.subType}/${tileName}`;
+
+              if (str.length > 15) {
+                sCtx.font = '14px sans-serif';
+
+                if (str.length > 22) {
+                  str = `.../${tileName.substring(0, 18)}...`;
+                }
+              }
+
+              sCtx.fillText(`"${str}"`, _off, sCanvas.height - _off);
+            }
+          }
+
+          sCtx.shadowOffsetX = sCtx.shadowOffsetY = sCtx.shadowBlur = 0;
         }
       }
-  
-      function refreshControls(addListener = true) {
-        Object.keys(controls).forEach(ctrlKey => {
-          const eleName = `tm_ctrl_${ctrlKey}`;
-          const ctrlEle = document.getElementById(eleName);
-  
-          if (!ctrlEle) {
-            console.log(`#${eleName} should exist but doesn't`);
-            return;
-          }
-  
-          document.getElementById(`${eleName}_lbl`).innerText = ctrlEle.value = controls[ctrlKey];
-  
-          if (!addListener) {
-            return;
-          }
-  
-          ctrlEle.addEventListener('change', (e) => {
-            const tryNum = Number.parseFloat(ctrlEle.value);
-  
-            if (Number.isNaN(tryNum)) {
-              return;
-            }
-  
-            controls[ctrlKey] = tryNum;
-            window.localStorage.setItem('controls', JSON.stringify(controls));
-            render();
-          })
-        });
-      };
   
       function render() {
         canvas.width = (og.width * controls.mult);
@@ -117,42 +124,356 @@
         ctx.drawImage(currentMap, 0, 0, canvas.width, canvas.height);
   
         drawGrid();
+
+        const tWidth = Math.floor(og.width / controls.tdim);
+        const tHeight = Math.floor(og.height / controls.tdim);
+        for (let x = 0; x < tWidth; x++) {
+          for (let y = 0; y < tHeight; y++) {
+            const tk = tileKey(x, y);
+            const tileLayers = layers[tk];
+
+            if (tileLayers) {
+              const mult = (controls.tdim + controls.space) * controls.mult;
+              const dim = controls.tdim * controls.mult;
+
+              if (tileLayers.annotation) {
+                const tx = x * mult - controls.lw;
+                const ty = y * mult - controls.lw;
+
+                ctx.strokeStyle = 'rgba(255, 255, 16, 1.0)';
+                ctx.lineWidth = controls.lw * 1.5;
+                ctx.lineJoin = 'bevel';
+                ctx.strokeRect(tx, ty, dim, dim);
+              }
+            }
+          }
+        }
+
+        drawCursor();
         refreshControls(false);
+      }
+  
+      function refreshControls(addListener = true) {
+        Object.keys(controls).forEach(ctrlKey => {
+          const eleName = `tm_ctrl_${ctrlKey}`;
+          const ctrlEle = document.getElementById(eleName);
+
+          if (ANNOTATE_MODE && annModeToggles.indexOf(eleName) !== -1) {
+            return;
+          }
+
+          if (!ctrlEle) {
+            console.log(`#${eleName} should exist but doesn't`);
+            return;
+          }
+
+          document.getElementById(`${eleName}_lbl`).innerText = ctrlEle.value = controls[ctrlKey];
+
+          if (!addListener) {
+            return;
+          }
+
+          ctrlEle.addEventListener('change', (e) => {
+            const tryNum = Number.parseFloat(ctrlEle.value);
+
+            if (Number.isNaN(tryNum)) {
+              return;
+            }
+
+            controls[ctrlKey] = tryNum;
+            render();
+          })
+        });
       }
   
       function setCurrentMap(newMap) {
         og = { width: newMap.width, height: newMap.height };
         currentMap = newMap;
-        render();
+      }
+
+      function clearCtxMenu() {
+        document.getElementById('annotate').style.display = 'none';
+      }
+
+      function canvasClick(e, indirect = false) {
+          e.preventDefault();
+          clearCtxMenu();
+
+          if (!indirect) {
+            hideAnnotateBox();
+          }
+
+          const div = (controls.tdim + controls.space) * controls.mult;
+          lastClick = { x: Math.floor(e.offsetX / div), y: Math.floor(e.offsetY / div)};
+          render();
+      }
+
+      function tileKey(x, y) {
+        return `${x},${y}`;
+      }
+
+      function lcTileKey() {
+        return tileKey(lastClick.x, lastClick.y);
+      }
+
+      let ANNOTATE_MODE = false;
+      const annModeToggles = ['tm_ctrl_space', 'tm_ctrl_tdim', 
+        'builtins_select', 'load_file'];
+
+      function toggleAnnotationMode(annModeOn) {
+        ANNOTATE_MODE = annModeOn;
+        annModeToggles.forEach(amtName => {
+          let e = document.getElementById(amtName);
+          e.disabled = annModeOn;
+        })
+
+        document.getElementById('ann_mode_controls').style.display = annModeOn ? 'block' : 'none';
+      }
+
+      const inputValRe = /^[a-zA-Z0-9_]+$/;
+      function inputVal(str, alertOnFail = true) {
+        const retVal = str.match(inputValRe) !== null;
+        
+        if (!retVal && alertOnFail) {
+          alert(`"${str}" is not valid: it must consist only of alphanumerics and underscore.`);
+        }
+
+        return retVal;
+      }
+
+      function hideAnnotateBox(){
+        document.getElementById('ann_group_new_box_name').value =
+          document.getElementById('ann_name').value = '';
+        document.getElementById('ann_group_new_box').style.display =
+          document.getElementById('annotate_box').style.display = 'none';
+      }
+
+      function persist() {
+        const ls = window.localStorage;
+
+        if (annotations) {
+          ls.setItem('annotations', JSON.stringify(annotations));
+        } else {
+          ls.removeItem('annotations');
+        }
+
+        ls.setItem('layers', JSON.stringify(layers));
+      }
+
+      function reload() {
+        let maybe;
+        
+        [
+          ['annotations', (x) => { annotations = x; }],
+          ['layers', (x) => { layers = x; }]
+        ]
+        .forEach(arr => {
+          try {
+            maybe = JSON.parse(window.localStorage.getItem(arr[0]));
+
+            if (maybe) {
+              arr[1](maybe);
+            }
+          } catch {}
+        });
       }
   
       document.addEventListener('DOMContentLoaded', () => {
         const loadFile = document.getElementById('load_file');
         loadFile.addEventListener('change', async (e) => {
           if (loadFile.files.length > 0) {
-            const newBitmap = await createImageBitmap(loadFile.files[0])
+            const newBitmap = await createImageBitmap(loadFile.files[0]);
             setCurrentMap(newBitmap);
+            document.getElementById('reset').disabled = true;
+            render();
           }
         });
   
-        document.getElementById('reset').addEventListener('click', () => {
-          window.localStorage.removeItem('controls');
-          controls = Object.assign({}, DEF_CONTROLS);
-          refreshControls(false);
+        canvas = document.getElementById('canvas');
+
+        const docClear = (e) => {
+          if (e.target.id !== 'canvas' && e.target.id.indexOf('ann') === -1) {
+            //console.log('target!', e.target)
+            clearCtxMenu();
+            hideAnnotateBox();
+          }
+        };
+
+        document.addEventListener('click', docClear);
+        document.addEventListener('contextmenu', docClear);
+
+        canvas.addEventListener('click', canvasClick);
+        canvas.addEventListener('contextmenu', (e) => {
+          canvasClick(e, true);
+          document.getElementById('ann_hdr').innerText = document.getElementById('selected').innerText;
+          const ann = document.getElementById('annotate');
+          ann.style.top = `${e.y}px`;
+          ann.style.left = `${e.x}px`;
+          ann.style.display = 'block';
+
+          const tileKey = lcTileKey();
+          const aAct = document.getElementById('annotate_act');
+
+          if (tileKey in layers) {
+            const annPtr = layers[tileKey].annotation;
+            if (annPtr) {
+              aAct.innerText = 'Remove Annotation';
+            }
+          } else {
+            aAct.innerText = 'Annotate';
+            document.getElementById('ann_ann').innerText = '';
+          }
+        });
+
+        document.getElementById('annotate_act').addEventListener('click', (e) => {
+          const tileKey = lcTileKey();
+
+          if (tileKey in layers) {
+            const annPtr = layers[tileKey].annotation;
+            if (annPtr) {
+              delete annotations[layers[tileKey].annotation.subType][tileKey];
+              delete layers[tileKey];
+              clearCtxMenu();
+              render();
+              return;
+            }
+          }
+
+          const ann = document.getElementById('annotate');
+          const annBox = document.getElementById('annotate_box');
+
+          annBox.style.top = ann.style.top;
+          annBox.style.left = ann.style.left;
+
+          document.getElementById('ann_box_hdr').innerText = document.getElementById('ann_hdr').innerText;
+          ann.style.display = 'none';
+          annBox.style.display = 'block';
+        });
+
+        document.getElementById('ann_group_sel_new').addEventListener('click', (e) => {
+          const agBox = document.getElementById('ann_group_new_box');
+          agBox.style.top = `${e.y}px`;
+          agBox.style.left = `${e.x}px`;
+          agBox.style.display = 'block';
+        });
+
+        document.getElementById('ann_group_new_box_submit').addEventListener('click', (e) => {
+          let val = document.getElementById('ann_group_new_box_name').value;
+
+          if (inputVal(val)) {
+            if (!annotations) {
+              annotations = {};
+              toggleAnnotationMode(true);
+            }
+            if (val in annotations) {
+              alert(`Group "${val}" already exists!`);
+              return;
+            }
+
+            annotations[val] = {};
+            const opt = document.createElement('option');
+            opt.text = opt.value = val;
+            opt.id = `ann_group_opt_${val}`;
+
+            const groupSel = document.getElementById('ann_group_sel');
+            groupSel.add(opt);
+            groupSel.selectedIndex = groupSel.options.length - 1;
+
+            document.getElementById('ann_group_new_box_name').value = '';
+            document.getElementById('ann_group_new_box').style.display = 'none';
+            persist();
+          }
+        });
+
+        document.getElementById('ann_group_new_box_cancel').addEventListener('click', (e) => {
+            document.getElementById('ann_group_new_box').style.display = 'none';
+        });
+
+        document.getElementById('ann_submit').addEventListener('click', (e) => {
+          const tileKey = lcTileKey();
+          const gs = document.getElementById('ann_group_sel');
+
+          if (gs.selectedIndex === -1) {
+            alert("You must select a group!");
+            return;
+          }
+
+          const group = gs.options[gs.selectedIndex].value;
+          const nEle = document.getElementById('ann_name');
+
+          if (inputVal(nEle.value)) {
+            if (!(group in annotations) || !lastClick) {
+              throw new Error(`how!? ${group} ${Object.keys(annotations)} -- ${lastClick}`);
+            }
+
+            const tileObj = {
+              name: nEle.value,
+              ...lastClick
+            };
+
+            const nameExistsInGroup = Object.values(annotations[group]).find(x => x.name === tileObj.name);
+
+            if (nameExistsInGroup) {
+              alert(`A tile named "${tileObj.name}" is already annotated in group "${group}" ` + 
+                `at (${nameExistsInGroup.x},${nameExistsInGroup.y})!`);
+              return;
+            }
+
+            if (!layers[tileKey]) {
+              layers[tileKey] = {};
+            }
+
+            annotations[group][tileKey] = tileObj;
+            layers[tileKey].annotation = { subType: group };
+            nEle.value = '';
+            hideAnnotateBox();
+            persist();
+            render();
+          }
+        });
+
+        document.getElementById('mode_exit').addEventListener('click', (e) => {
+          layers = {};
+          annotations = undefined;
+
+          const gs = document.getElementById('ann_group_sel');
+          while (gs.firstChild) {
+            gs.removeChild(gs.firstChild);
+          }
+
+          toggleAnnotationMode(false);
           render();
         });
-  
-        canvas = document.getElementById('canvas');
-  
-        canvas.addEventListener('click', (e) => {
-          const div = (controls.tdim + controls.space) * controls.mult;
-          lastClick = { x: Math.floor(e.offsetX / div), y: Math.floor(e.offsetY / div)};
-          render();
+
+        document.getElementById('mode_save').addEventListener('click', (e) => {
+          const xfAnn = Object.keys(annotations).reduce((acc, annKey) => {
+            acc[annKey] = Object.values(annotations[annKey]).reduce((inAcc, tileObj) => {
+              const tileName = tileObj.name;
+              const newObj = Object.assign({}, tileObj);
+              delete newObj.name;
+              inAcc[tileName] = newObj;
+              return inAcc;
+            }, {});
+            return acc;
+          }, {});
+
+          const blob = new Blob([JSON.stringify(xfAnn)], { type: 'text/json' });
+          const tempA = document.createElement('a');
+          const urlObj = URL.createObjectURL(blob);
+
+          // adapted from https://stackoverflow.com/a/30832210
+          tempA.href = urlObj;
+          tempA.style.display = 'none';
+          tempA.download = `tilemaptool-annotations-${(new Date()).toISOString().replace(/[\-:\.]/g, '')}.json`;
+          document.body.appendChild(tempA);
+          tempA.click();
+          setTimeout(() => {
+            document.body.removeChild(tempA);
+            window.URL.revokeObjectURL(urlObj);
+          });
         });
   
         ctx = canvas.getContext('2d');
-        refreshControls();
-  
         const builtins = document.getElementById('builtins');
         const biSelector = document.getElementById('builtins_select');
 
@@ -160,8 +481,19 @@
           const opt = document.createElement('option');
           opt.text = opt.value = builtin.id;
           biSelector.add(opt);
-          console.log(builtin.dataset.source);
         });
+
+        const setControlsToCurrent = () => {
+          const img = document.getElementById(biSelector[biSelector.selectedIndex].value);
+          const newControls = Object.assign({}, JSON.parse(img.dataset.controls));
+
+          if (ANNOTATE_MODE) {
+            delete newControls.space;
+            delete newControls.tdim;
+          }
+
+          controls = Object.assign({}, controls, newControls);
+        };
 
         const selectBuiltin = (index) => {
           const opt = biSelector[index];
@@ -169,14 +501,55 @@
           const oLink = document.getElementById('builtin_source_link');
 
           oLink.href = img.dataset.source;
+          biSelector.selectedIndex = index;
           setCurrentMap(img);
+          setControlsToCurrent();
         };
 
         biSelector.addEventListener('change', (e) => {
           selectBuiltin(e.target.selectedIndex);
+          document.getElementById('reset').disabled = false;
+          render();
+        });
+  
+        document.getElementById('reset').addEventListener('click', () => {
+          setControlsToCurrent();
+          refreshControls(false);
+          render();
         });
 
-        selectBuiltin(0);
+        const flopToolbar = () => {
+          const tc = document.getElementById('tm_ctrl');
+          const flop = tc.dataset.flop.split(';');
+          if (flop[0] === 'right') {
+            tc.style.left = `${flop[1]}px`;
+            tc.style.removeProperty('right');
+            tc.dataset.flop = `left;${flop[1]}`;
+            document.getElementById('flop_right').style.display = 'none';
+            document.getElementById('flop_left').style.display = 'block';
+          } else {
+            tc.style.right = `${flop[1]}px`;
+            tc.style.removeProperty('left');
+            tc.dataset.flop = `right;${flop[1]}`;
+            document.getElementById('flop_right').style.display = 'block';
+            document.getElementById('flop_left').style.display = 'none';
+          }
+        };
+
+        document.getElementById('flop').addEventListener('click', flopToolbar);
+        flopToolbar();
+
+        //reload();
+
+        /* shoot, can only reload if we have same image! if selected, can't do!
+        if (annotations && Object.values(annotations).length > 0) {
+          toggleAnnotationMode(true);
+        } else {*/
+          selectBuiltin(0);
+          refreshControls();
+        //}
+
+        render();
       });
   
       const keyAdjIfOk = (dim, adj) => {
@@ -239,17 +612,17 @@
       margin: 0.5em;
       background-color: #222232;
       border-radius: 0.22em;
+      max-width: 200px;
     }
 
     #tm_ctrl {
       position: fixed;
       top: 20px;
-      right: 20px;
       display: block;
       z-index: 20000000;
       background-color: rgb(10, 10, 64, 0.7);
       border-radius: 0.2em;
-      padding: 1.2em;
+      padding: 0 1.2em 1.2em 1.2em;
       margin: 0.7em;
       border: 0.5px solid #cfcfcf;
     }
@@ -264,10 +637,10 @@
     }
 
     #selected {
-      padding: 0.25em 0.5em 0em 0.5em;
       margin: 0.5em;
       min-height: 1.1em;
       font-size: 1.5em;
+      text-decoration: underline;
     }
 
     #selected_canvas {
@@ -282,6 +655,7 @@
 
     label {
       font-family: 'Courier New', Courier, monospace;
+      font-size: 0.9em;
       min-width: 30px;
       display: inline-block;
       text-align: right;
@@ -300,56 +674,145 @@
     #discl {
       font-size: 0.65em;
       font-style: italic;
-      color: #ccd;
+      font-weight: bold;
+      color: #cfcfcf;
+      margin-left: 10px;
     }
 
     #footer {
       font-size: 0.8em;
       padding-top: 2em;
       display: block;
+      color: #cfcfcf;
+    }
+
+    .annotate {
+      position: fixed;
+      display: none;
+      padding: 0.75em;
+      z-index: 20000000;
+      background-color: rgb(10, 10, 64, 0.7);
+      border-radius: 0.2em;
+      border: 1px solid #cfcfcf;
+    }
+
+    #ann_hdr {
+      text-decoration: underline;
+      padding-bottom: 1em;
+    }
+
+    #ann_box_hdr {
+      text-decoration: underline;
+      padding-bottom: 1em;
+      text-align: center;
+    }
+
+    #annotate_box {
+      text-align: left;
+    }
+
+    #ann_group_new_box {
+      text-align: left;
+    }
+
+    #reset_cont {
+      width: 100%; 
+      text-align: right;
+    }
+
+    #ann_mode_controls {
+      display: none; 
+      width: 100%; 
+      text-align: right;
+      padding-bottom: 1em;
+    }
+
+    #ann_mode_controls h5 {
+      text-decoration: underline;
+      margin: 0.8em 0 0.8em 0;
+    }
+
+    #flop {
+      position: absolute;
+      top: 20px;
+      right: 20px;
     }
     </style>
   </head>
 
   <body>
     <div id="main">
-      <div id="tm_ctrl">
-        <label id="tm_ctrl_mult_lbl"></label><input type="range" min="1" max="16" id="tm_ctrl_mult" /><label>zoom</label><br/>
-        <label id="tm_ctrl_space_lbl"></label><input type="range" min="0" max="8" id="tm_ctrl_space" /><label>spacing</label><br/>
-        <label id="tm_ctrl_lw_lbl"></label><input type="range" min="0.5" max="3" step="0.25" id="tm_ctrl_lw" /><label>line width</label><br/>
-        <label id="tm_ctrl_tdim_lbl"></label><input type="range" min="4" max="256" step="4" list="tile_whs" id="tm_ctrl_tdim" /><label>tile w/h</label><br/>
-        
-        <datalist id="tile_whs">
-          <option value="4">
-          <option value="8">
-          <option value="16">
-          <option value="32">
-          <option value="64">
-          <option value="128">
-          <option value="256">
-        </datalist>
+      <div id="tm_ctrl" data-flop="left;20">
 
-        <div style="width: 100%; text-align: right;">
-          <button id="reset">Reset Parameters</button>
-        </div>
+        <a href="#" id="flop">
+          <svg id="flop_left" xmlns="http://www.w3.org/2000/svg" enable-background="new 0 0 24 24" viewBox="0 0 24 24" fill="white" width="18px" height="18px"><rect fill="none" height="24" width="24"/><path d="M8.5,8.62v6.76L5.12,12L8.5,8.62 M10,5l-7,7l7,7V5L10,5z M14,5v14l7-7L14,5z"/></svg>
+          <svg id="flop_right" style="display: none;" xmlns="http://www.w3.org/2000/svg" enable-background="new 0 0 24 24" viewBox="0 0 24 24" fill="white" width="18px" height="18px"><rect fill="none" height="24" transform="matrix(-1 -1.224647e-16 1.224647e-16 -1 24 24)" width="24"/><path d="M15.5,15.38V8.62L18.88,12L15.5,15.38 M14,19l7-7l-7-7V19L14,19z M10,19V5l-7,7L10,19z"/></svg>
+        </a><br/>
 
         Load <a href="" id="builtin_source_link" target="_blank">built-in</a>:<br/>
         <select id="builtins_select"></select>
         <br/><br/>
 
         Load from disk:<br/><input type="file" id="load_file" accept="image/*" /><br/>
-        <span id="discl">(never uploaded anywhere; this tool runs entirely on your computer)</span>
+        <span id="discl">(never uploaded anywhere)</span>
         <br/><br/>
+
+        <label id="tm_ctrl_tdim_lbl"></label><input type="range" min="4" max="256" step="4" id="tm_ctrl_tdim" /><label>tile w/h</label><br/>
+        <label id="tm_ctrl_space_lbl"></label><input type="range" min="0" max="8" id="tm_ctrl_space" /><label>spacing</label><br/>
+        <br/>
+        <label id="tm_ctrl_mult_lbl"></label><input type="range" min="1" max="16" id="tm_ctrl_mult" /><label>zoom</label><br/>
+        <label id="tm_ctrl_lw_lbl"></label><input type="range" min="1" max="3" step="1" id="tm_ctrl_lw" /><label>line width</label><br/>
+
+        <div id="reset_cont">
+          <button id="reset" type="reset">Reset</button>
+        </div>
 
         <div id="sel_cont">
           <div id="selected"></div>
 
           <canvas id="selected_canvas" width="256" height="256"></canvas>
 
-          <div id="debug" style="display: block;"></div>
+          <div id="debug" style="display: none;"></div>
+          <div id="annotate" class="annotate">
+            <div id="ann_hdr"></div>
+            <button id="annotate_act">Annotate</button>
+            <div id="ann_ann"></div>
+          </div>
+
+          <div id="annotate_box" class="annotate">
+            <div id="ann_box_hdr"></div>
+
+            <label>Group:</label>
+            <select id="ann_group_sel">
+            </select>
+            <button id="ann_group_sel_new" type="menu">+</button>
+            <br/><br/>
+            
+            <label>Tile Name:</label>
+            <input id="ann_name" type="text" size="20" />
+            <br/><br/>
+
+            <button id="ann_submit" type="submit">Save Annotation</button>
+          </div>
+
+          <div id="ann_group_new_box" class="annotate">
+            <label>Group Name:</label>
+            <input type="text" id="ann_group_new_box_name" /><br/><br/>
+            <button id="ann_group_new_box_submit" type="submit">Create Group</button>
+            <button id="ann_group_new_box_cancel" type="submit">Cancel</button>
+          </div>
+
+          <div id="ann_mode_controls">
+            <h5>Annotations:</h5>
+            <button id="mode_save">Save</button>
+            <button id="mode_exit">Discard</button>
+          </div>
 
           <div id="footer">
-            inspiried by the <a href="https://godotengine.org/" target="_blank">godot engine</a>
+            TMT is <i>entirely</i> self-contained: save<br/>
+            as plain HTML to run locally &amp; offline
+            <br/><br/>
+            inspired by the <a href="https://godotengine.org/" target="_blank">godot engine</a>
           </div>
         </div>
       </div>
@@ -357,8 +820,10 @@
       <canvas class="zerozero" id="canvas"></canvas>
 
       <div id="builtins">
-        <!-- "RPG Urban Pack" tilemap from https://kenney.nl/assets/rpg-urban-pack -->
-        <img data-source="https://kenney.nl/assets/rpg-urban-pack" id="kenney-RPGUrbanPack" src="data:image/png;base64,
+        <img data-source="https://kenney.nl/assets/rpg-urban-pack"
+          data-controls='{"mult":2,"space":0,"tdim":16,"lw":1}' 
+          id="kenney-RPGUrbanPack" 
+          src="data:image/png;base64,
         iVBORw0KGgoAAAANSUhEUgAAAbAAAAEgCAMAAADi9tZbAAAABGdBTUEAALGPC/xhBQAAAVBQTFRF
         AAAA9Pfu////oZ3M4pd5xcW5eTRFm5+7q6W6hqLnscDaUVFYcXF7llZSyKyfaG+Ia8zqo41ybGmR
         xbmT9ericUgva4bUlV8+V2y2NcSsi4qx1tSqRLWKdz4okndsrlJCZUFAZGuDeXuTP0SIWVliHlNG
@@ -664,8 +1129,10 @@
         eJgYM+71lUildX39Lfxobj9X8/bN9DC5+2tlxd8fht8f5ulhXQLLbzo9Ltmmp9PF2kX1Kn5/WHft
         GT0soYUFN/x/+lgYnEf8q/QAAAAASUVORK5CYII=" style="display: none;"/>
 
-        <!-- https://opengameart.org/content/rpg-tiles-cobble-stone-paths-town-objects -->
-        <img data-source="https://opengameart.org/content/rpg-tiles-cobble-stone-paths-town-objects" id="opengameart-RPGTiles" src="data:image/png;base64,
+        <img data-source="https://opengameart.org/content/rpg-tiles-cobble-stone-paths-town-objects"
+          data-controls='{"mult":2,"space":0,"tdim":32,"lw":1}'
+          id="opengameart-RPGTiles" 
+          src="data:image/png;base64,
         iVBORw0KGgoAAAANSUhEUgAAAgAAAAIACAYAAAD0eNT6AAAAAXNSR0IArs4c6QAAAAZiS0dEAF8A
         WgBAVPcJkwAAAAlwSFlzAAAewgAAHsIBbtB1PgAAAAd0SU1FB90BFQgkF0T7HpUAACAASURBVHja
         7L15eFxXmef/qVVVpapSqbSVNqu0WFJs2ZZtecNZjEmCSUMIdEIbAkxgSP8IT4ZhBprODJBOSJhO
@@ -3977,8 +4444,10 @@
         0lNYax3tC7y+hGGtAPtKIQo5oOeSy8qRtA9jOrW806Nf5aO1j9cCLzabcHBsZ/Bb2kcH8/ava7fb
         +azLJZdccsklc+FX4m4rlRLZDmeyqDU3maZZvlQXvrMpy/b/P/tvs+o6LKIaAAAAAElFTkSuQmCC" style="display: none;"/>
 
-        <!-- "Roguelike/RPG" tilemap from https://www.kenney.nl/assets/roguelike-rpg-pack -->
-        <img data-source="https://www.kenney.nl/assets/roguelike-rpg-pack" id="kenney-RoguelikeRPG" src="data:image/png;base64,
+        <img data-source="https://www.kenney.nl/assets/roguelike-rpg-pack"
+          data-controls='{"mult":2,"space":1,"tdim":16,"lw":1}'
+          id="kenney-RoguelikeRPG"
+          src="data:image/png;base64,
         iVBORw0KGgoAAAANSUhEUgAAAnQAAAHbCAYAAABCywdpAAAAGXRFWHRTb2Z0d2FyZQBBZG9iZSBJ
         bWFnZVJlYWR5ccllPAAAAyZpVFh0WE1MOmNvbS5hZG9iZS54bXAAAAAAADw/eHBhY2tldCBiZWdp
         bj0i77u/IiBpZD0iVzVNME1wQ2VoaUh6cmVTek5UY3prYzlkIj8+IDx4OnhtcG1ldGEgeG1sbnM6
@@ -4989,8 +5458,10 @@
         uS7NykHq00EfUgpsHQd1cUarX5dVf3vd+cs5FI6utRubhsNHtCUUjtBhI4KyEE6h2JEH/n8BBgAq
         nTuHb5hmiAAAAABJRU5ErkJggg==" style="display: none;"/>
 
-        <!-- "Gallet City" tilemap from https://adamatomic.itch.io/gallet-city -->
-        <img data-source="https://adamatomic.itch.io/gallet-city" id="adamatomic-GalletCity" src="data:image/png;base64,
+        <img data-source="https://adamatomic.itch.io/gallet-city" 
+          data-controls='{"mult":4,"space":0,"tdim":8,"lw":1}'
+          id="adamatomic-GalletCity" 
+          src="data:image/png;base64,
         iVBORw0KGgoAAAANSUhEUgAAAEAAAACoCAYAAABQfugxAAANkklEQVR42uWdPbIsRxGFZycEjjaA
         JSIQLzDAIQID77kyMJCjwMSQ8/aBhSkD2RisQNvAZAki6qIzcea8kz/103PvQzeiom9Pz3R3fl2V
         lZWVlX27FX//+ff3P/zzH38LyzieFfebD998c6y8f//lvWCfj/F33b3cdgHMFtzM99/+pVV2Ael5
