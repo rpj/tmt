@@ -7,12 +7,54 @@
     <title>TileMapTool</title>
 
     <script>
-      let controls, canvas, ctx, og, lastClick, currentMap, annotations, layers = {};
+      // values must take a CanvasRenderingContext2D parameter on which to apply style(s)
+      const STYLES = {
+        gridLines: (ctx) => {
+          ctx.strokeStyle = 'magenta';
+          ctx.lineWidth = controls.lw;
+        },
+        cursor: (ctx) => {
+          ctx.strokeStyle = 'rgba(64, 255, 64, 0.75)';
+          ctx.lineWidth = controls.lw * 2;
+          ctx.lineJoin = 'bevel';
+        },
+        annotationCursor: (ctx) => {
+          ctx.strokeStyle = 'rgba(255, 255, 16, 1.0)';
+          ctx.lineWidth = controls.lw * 1.5;
+          ctx.lineJoin = 'bevel';
+        },
+        selectedCanvas: (sCtx) => {
+          sCtx.fillStyle = 'rgb(10, 10, 64, 1.0)';
+          sCtx.font = '16px monospace';
+          sCtx.textBaseline = 'top';
+          sCtx.textAlign = 'start';
+          sCtx.shadowColor = 'rgb(245, 245, 245, 0.8)';
+          sCtx.shadowOffsetX = sCtx.shadowOffsetY = 2;
+          sCtx.shadowBlur = 2;
+        },
+        selectedCanvasText: (sCtx) => {
+          sCtx.textBaseline = 'bottom';
+          sCtx.textAlign = 'end';
+        },
+        selectedCanvasAnnotation: (sCtx) => {
+          sCtx.font = '20px sans-serif';
+          sCtx.textBaseline = 'bottom';
+          sCtx.textAlign = 'start';
+        },
+        selectedCanvasAnnotationSmall: (sCtx) => {
+          sCtx.font = '14px sans-serif';
+        }
+      };
+
+      const FUDGE = 1.10;
+      const INPUT_VAL_RE = /^[a-zA-Z0-9_]+$/;
+      const ANNOTATE_MODE_TOGGLES = ['tm_ctrl_space', 'tm_ctrl_tdim', 'builtins_select', 'load_file'];
+
+      let controls, canvas, ctx, og, lastClick, currentMap, annotations, layers = {}, ANNOTATE_MODE = false;
   
       function drawGrid() {
         const tPs = (controls.tdim + controls.space) * controls.mult;
-        ctx.strokeStyle = 'magenta';
-        ctx.lineWidth = controls.lw;
+        STYLES.gridLines(ctx);
 
         const drawCardinal = (northSouth = true) => {
           const dim = northSouth ? canvas.width : canvas.height;
@@ -45,42 +87,37 @@
 
       function drawCursor() {
         if (lastClick) {
-          ctx.strokeStyle = 'rgba(64, 255, 64, 0.75)';
-          ctx.lineWidth = controls.lw * 2;
-          ctx.lineJoin = 'bevel';
+          STYLES.cursor(ctx);
+
           const mult = (controls.tdim + controls.space) * controls.mult;
+          const dim = controls.tdim * controls.mult;
+          const sMult = controls.tdim + controls.space;
           const sX = (lastClick.x * mult);
           const sY = (lastClick.y * mult);
-          const dim = controls.tdim * controls.mult;
-          ctx.strokeRect(sX - controls.lw, sY - controls.lw, dim, dim);
-          document.getElementById('selected').innerText = `X: ${lastClick.x}, Y: ${lastClick.y}`;
-  
-          const sCanvas = document.getElementById('selected_canvas');
-          const sCtx = sCanvas.getContext('2d');
-          sCtx.imageSmoothingEnabled = false;
-          const sMult = controls.tdim + controls.space;
-          sCtx.clearRect(0, 0, sCanvas.width, sCanvas.height);
 
           lastClick.src = {
             topLeft: { x: lastClick.x * sMult, y: lastClick.y * sMult },
             botRight: { x: (lastClick.x * sMult) + controls.tdim, y: (lastClick.y * sMult) + controls.tdim }
           };
+          
+          ctx.strokeRect(sX - controls.lw, sY - controls.lw, dim, dim);
+          document.getElementById('selected').innerText = `X: ${lastClick.x}, Y: ${lastClick.y}`;
+  
+          // draw "selected" canvas image
+          const sCanvas = document.getElementById('selected_canvas');
+          const sCtx = sCanvas.getContext('2d');
+
+          sCtx.clearRect(0, 0, sCanvas.width, sCanvas.height);
+          sCtx.imageSmoothingEnabled = false;
+          STYLES.selectedCanvas(sCtx);
 
           sCtx.drawImage(currentMap, lastClick.src.topLeft.x, lastClick.src.topLeft.y, 
             controls.tdim, controls.tdim, 0, 0, sCanvas.width, sCanvas.height);
 
           const _off = 4;
-          sCtx.fillStyle = 'rgb(10, 10, 64, 1.0)';
-          sCtx.font = '16px monospace';
-          sCtx.textBaseline = 'top';
-          sCtx.textAlign = 'start';
-          sCtx.shadowColor = 'rgb(245, 245, 245, 0.8)';
-          sCtx.shadowOffsetX = sCtx.shadowOffsetY = 2;
-          sCtx.shadowBlur = 2;
           sCtx.fillText(`${lastClick.src.topLeft.x}, ${lastClick.src.topLeft.y}`, _off, _off);
 
-          sCtx.textBaseline = 'bottom';
-          sCtx.textAlign = 'end';
+          STYLES.selectedCanvasText(sCtx);
           sCtx.fillText(`${lastClick.src.botRight.x}, ${lastClick.src.botRight.y}`,
             sCanvas.width - _off, sCanvas.height - _off);
 
@@ -88,15 +125,13 @@
 
           if (tLayers) {
             if (tLayers.annotation) {
-              sCtx.font = '20px sans-serif';
-              sCtx.textBaseline = 'bottom';
-              sCtx.textAlign = 'start';
+              STYLES.selectedCanvasAnnotation(sCtx);
               const tileName = annotations[tLayers.annotation.subType][lcTileKey()].name;
 
               let str = `${tLayers.annotation.subType}/${tileName}`;
 
               if (str.length > 15) {
-                sCtx.font = '14px sans-serif';
+                STYLES.selectedCanvasAnnotationSmall(sCtx);
 
                 if (str.length > 22) {
                   str = `.../${tileName.substring(0, 18)}...`;
@@ -111,16 +146,7 @@
         }
       }
   
-      function render() {
-        canvas.width = (og.width * controls.mult);
-        canvas.height = (og.height * controls.mult);
-        ctx.clearRect(0, 0, canvas.width, canvas.height);
-        ctx.imageSmoothingEnabled = false;
-  
-        ctx.drawImage(currentMap, 0, 0, canvas.width, canvas.height);
-  
-        drawGrid();
-
+      function drawLayers() {
         const tWidth = Math.floor(og.width / controls.tdim);
         const tHeight = Math.floor(og.height / controls.tdim);
         for (let x = 0; x < tWidth; x++) {
@@ -135,15 +161,24 @@
                 const tx = x * mult - controls.lw;
                 const ty = y * mult - controls.lw;
 
-                ctx.strokeStyle = 'rgba(255, 255, 16, 1.0)';
-                ctx.lineWidth = controls.lw * 1.5;
-                ctx.lineJoin = 'bevel';
+                STYLES.annotationCursor(ctx);
                 ctx.strokeRect(tx, ty, dim, dim);
               }
             }
           }
         }
+      }
 
+      function render() {
+        canvas.width = (og.width * controls.mult);
+        canvas.height = (og.height * controls.mult);
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
+        ctx.imageSmoothingEnabled = false;
+  
+        ctx.drawImage(currentMap, 0, 0, canvas.width, canvas.height);
+  
+        drawGrid();
+        drawLayers();
         drawCursor();
         refreshControls(false);
       }
@@ -153,7 +188,7 @@
           const eleName = `tm_ctrl_${ctrlKey}`;
           const ctrlEle = document.getElementById(eleName);
 
-          if (ANNOTATE_MODE && annModeToggles.indexOf(eleName) !== -1) {
+          if (ANNOTATE_MODE && ANNOTATE_MODE_TOGGLES.indexOf(eleName) !== -1) {
             return;
           }
 
@@ -208,13 +243,10 @@
         return tileKey(lastClick.x, lastClick.y);
       }
 
-      let ANNOTATE_MODE = false;
-      const annModeToggles = ['tm_ctrl_space', 'tm_ctrl_tdim', 
-        'builtins_select', 'load_file'];
-
       function toggleAnnotationMode(annModeOn) {
         ANNOTATE_MODE = annModeOn;
-        annModeToggles.forEach(amtName => {
+        ANNOTATE_MODE_TOGGLES
+        .forEach(amtName => {
           let e = document.getElementById(amtName);
           e.disabled = annModeOn;
         })
@@ -222,22 +254,21 @@
         document.getElementById('ann_mode_controls').style.display = annModeOn ? 'block' : 'none';
       }
 
-      const inputValRe = /^[a-zA-Z0-9_]+$/;
-      function inputVal(str, alertOnFail = true) {
-        const retVal = str.match(inputValRe) !== null;
+      function hideAnnotateBox(){
+        document.getElementById('ann_group_new_box_name').value =
+          document.getElementById('ann_name').value = '';
+        document.getElementById('ann_group_new_box').style.display =
+          document.getElementById('annotate_box').style.display = 'none';
+      }
+
+      function validateInput(str, alertOnFail = true) {
+        const retVal = str.match(INPUT_VAL_RE) !== null;
         
         if (!retVal && alertOnFail) {
           alert(`"${str}" is not valid: it must consist only of alphanumerics and underscore.`);
         }
 
         return retVal;
-      }
-
-      function hideAnnotateBox(){
-        document.getElementById('ann_group_new_box_name').value =
-          document.getElementById('ann_name').value = '';
-        document.getElementById('ann_group_new_box').style.display =
-          document.getElementById('annotate_box').style.display = 'none';
       }
 
       function persist() {
@@ -269,8 +300,16 @@
           } catch {}
         });
       }
-  
-      document.addEventListener('DOMContentLoaded', () => {
+
+      function docClear(e) {
+        if (e.target.id !== 'canvas' && e.target.id.indexOf('ann') === -1) {
+          //console.log('target!', e.target)
+          clearCtxMenu();
+          hideAnnotateBox();
+        }
+      }
+
+      function addLoadFileListener() {
         const loadFile = document.getElementById('load_file');
         loadFile.addEventListener('change', async (e) => {
           if (loadFile.files.length > 0) {
@@ -280,17 +319,9 @@
             render();
           }
         });
-  
-        canvas = document.getElementById('canvas');
+      }
 
-        const docClear = (e) => {
-          if (e.target.id !== 'canvas' && e.target.id.indexOf('ann') === -1) {
-            //console.log('target!', e.target)
-            clearCtxMenu();
-            hideAnnotateBox();
-          }
-        };
-
+      function addClickHandlers() {
         document.addEventListener('click', docClear);
         document.addEventListener('contextmenu', docClear);
 
@@ -300,21 +331,29 @@
           document.getElementById('ann_hdr').innerText = document.getElementById('selected').innerText;
           const ann = document.getElementById('annotate');
           let { x, y, pageX, pageY } = e;
+
+          // render out-of-view in order to populate .clientWidth & .clientHeight
+          ann.style.top = `-${window.innerHeight * 2}px`;
+          ann.style.left = `-${window.innerWidth * 2}px`;
+          ann.style.display = 'block';
           
-          const offsets = [];
-          if (pageY > window.innerHeight - 200) {
-            y -= 85;
-            offsets.push('y')
+          const offsets = {};
+          const hFudge = ann.clientHeight * FUDGE;
+          const wFudge = ann.clientWidth * FUDGE;
+
+          // offset the box's coords if any of it were to ultimately render off-screen 
+          if (pageY > window.innerHeight - hFudge) {
+            y -= (offsets.y = hFudge);
           }
 
-          if (pageX > window.innerWidth - 350) {
-            x -= 150;
-            offsets.push('x');
+          if (pageX > window.innerWidth - wFudge) {
+            x -= (offsets.x = wFudge);
           }
 
           ann.style.top = `${y}px`;
           ann.style.left = `${x}px`;
-          ann.style.display = 'block';
+
+          // store the offsets in a data attrib so that further stacked dialogs may inherit them
           ann.dataset.offsets = JSON.stringify(offsets);
 
           const tileKey = lcTileKey();
@@ -330,7 +369,9 @@
             document.getElementById('ann_ann').innerText = '';
           }
         });
+      }
 
+      function addAnnotationHandlers() {
         document.getElementById('annotate_act').addEventListener('click', (e) => {
           const tileKey = lcTileKey();
 
@@ -352,17 +393,33 @@
           let top = Number.parseInt(ann.style.top.replace('px', ''));
           let left = Number.parseInt(ann.style.left.replace('px', ''));
 
-          if (annOffsets.indexOf('y') !== -1) {
-            top -= 115;
+          annBox.style.top = `-${window.innerHeight * 2}px`;
+          annBox.style.left = `-${window.innerWidth * 2}px`;
+          annBox.style.display = 'block';
+
+          // adjust for any offset given to the parent annotation dialog
+          if ('y' in annOffsets) {
+            top -= (annBox.clientHeight - annOffsets.y) * FUDGE;
           }
 
-          if (annOffsets.indexOf('x') !== -1) {
-            left -= 200;
+          if ('x' in annOffsets) {
+            left -= (annBox.clientWidth - annOffsets.x) * FUDGE;
+          }
+
+          // if annBox will still render (partly) offscreen, further adjust it by centering it per the mouse position
+          const hFudge = annBox.clientHeight * FUDGE;
+          if (top + hFudge > window.innerHeight) {
+            top -= hFudge / 2;
+          }
+
+          const wFudge = annBox.clientWidth * FUDGE;
+          if (left + wFudge > window.innerWidth) {
+            left -= wFudge / 2;
           }
 
           annBox.style.top = `${top}px`;
           annBox.style.left = `${left}px`;
-          ann.dataset.offsets = '[]';
+          ann.dataset.offsets = '{}';
 
           document.getElementById('ann_box_hdr').innerText = document.getElementById('ann_hdr').innerText;
           ann.style.display = 'none';
@@ -371,15 +428,21 @@
 
         document.getElementById('ann_group_sel_new').addEventListener('click', (e) => {
           const agBox = document.getElementById('ann_group_new_box');
-          agBox.style.top = `${e.y}px`;
-          agBox.style.left = `${e.x}px`;
+
+          // center this box in 'x' per mouse location
+          agBox.style.top = `-${window.innerHeight * 2}px`;
+          agBox.style.left = `-${window.innerWidth * 2}px`;
           agBox.style.display = 'block';
+          const setX = e.x - (agBox.clientWidth / 2) * (2.0 - FUDGE);
+
+          agBox.style.top = `${e.y}px`;
+          agBox.style.left = `${setX}px`;
         });
 
         document.getElementById('ann_group_new_box_submit').addEventListener('click', (e) => {
           let val = document.getElementById('ann_group_new_box_name').value;
 
-          if (inputVal(val)) {
+          if (validateInput(val)) {
             if (!annotations) {
               annotations = {};
               toggleAnnotationMode(true);
@@ -420,7 +483,7 @@
           const group = gs.options[gs.selectedIndex].value;
           const nEle = document.getElementById('ann_name');
 
-          if (inputVal(nEle.value)) {
+          if (validateInput(nEle.value)) {
             if (!(group in annotations) || !lastClick) {
               throw new Error(`how!? ${group} ${Object.keys(annotations)} -- ${lastClick}`);
             }
@@ -445,12 +508,15 @@
             annotations[group][tileKey] = tileObj;
             layers[tileKey].annotation = { subType: group };
             nEle.value = '';
+
             hideAnnotateBox();
             persist();
             render();
           }
         });
+      }
 
+      function addModeHandlers() {
         document.getElementById('mode_exit').addEventListener('click', (e) => {
           layers = {};
           annotations = undefined;
@@ -491,8 +557,44 @@
             window.URL.revokeObjectURL(urlObj);
           });
         });
-  
-        ctx = canvas.getContext('2d');
+      }
+
+      function addKeyHandlers() {
+        const keyAdjIfOk = (dim, adj) => {
+          if (lastClick && dim in lastClick) {
+            const checkCopy = Object.assign({}, lastClick);
+    
+            lastClick[dim] += adj;
+    
+            const cX = lastClick.x * controls.tdim;
+            const cY = lastClick.y * controls.tdim;
+    
+            // check bounds, revert to checkCopy if out-of-bounds
+            if (cX < 0 || cX >= og.width || cY < 0 || cY >= og.height) {
+              lastClick = checkCopy;
+            } else {
+              render();
+            }
+          }
+        }
+    
+        const keyAdjustors = {
+          38: () => keyAdjIfOk('y', -1),  // up
+          40: () => keyAdjIfOk('y', 1),   // down
+          37: () => keyAdjIfOk('x', -1),  // left
+          39: () => keyAdjIfOk('x', 1),   // right
+        };
+    
+        document.addEventListener('keydown', (e) => {
+          if (e.keyCode in keyAdjustors) {
+            keyAdjustors[e.keyCode]();
+            render();
+            return false;
+          }
+        });
+      }
+
+      function setupBuiltinSelector() {
         const builtins = document.getElementById('builtins');
         const biSelector = document.getElementById('builtins_select');
 
@@ -502,34 +604,41 @@
           biSelector.add(opt);
         });
 
-        const setControlsToCurrent = () => {
-          const img = document.getElementById(biSelector[biSelector.selectedIndex].value);
-          const newControls = Object.assign({}, JSON.parse(img.dataset.controls));
-
-          if (ANNOTATE_MODE) {
-            delete newControls.space;
-            delete newControls.tdim;
-          }
-
-          controls = Object.assign({}, controls, newControls);
-        };
-
-        const selectBuiltin = (index) => {
-          const opt = biSelector[index];
-          const img = document.getElementById(opt.value);
-          const oLink = document.getElementById('builtin_source_link');
-
-          oLink.href = img.dataset.source;
-          biSelector.selectedIndex = index;
-          setCurrentMap(img);
-          setControlsToCurrent();
-        };
-
         biSelector.addEventListener('change', (e) => {
           selectBuiltin(e.target.selectedIndex);
           document.getElementById('reset').disabled = false;
           render();
         });
+      }
+
+      function setControlsToCurrent() {
+        const biSelector = document.getElementById('builtins_select');
+        const img = document.getElementById(biSelector[biSelector.selectedIndex].value);
+        const newControls = Object.assign({}, JSON.parse(img.dataset.controls));
+
+        if (ANNOTATE_MODE) {
+          delete newControls.space;
+          delete newControls.tdim;
+        }
+
+        controls = Object.assign({}, controls, newControls);
+      };
+
+      function selectBuiltin(index) {
+        const biSelector = document.getElementById('builtins_select');
+        const opt = biSelector[index];
+        const img = document.getElementById(opt.value);
+        const oLink = document.getElementById('builtin_source_link');
+
+        oLink.href = img.dataset.source;
+        biSelector.selectedIndex = index;
+        setCurrentMap(img);
+        setControlsToCurrent();
+      };
+  
+      document.addEventListener('DOMContentLoaded', () => {
+        canvas = document.getElementById('canvas');
+        ctx = canvas.getContext('2d');
   
         document.getElementById('reset').addEventListener('click', () => {
           setControlsToCurrent();
@@ -537,71 +646,37 @@
           render();
         });
 
-        const flopToolbar = () => {
+        const flipToolbar = () => {
           const tc = document.getElementById('tm_ctrl');
-          const flop = tc.dataset.flop.split(';');
-          if (flop[0] === 'right') {
-            tc.style.left = `${flop[1]}px`;
-            tc.style.removeProperty('right');
-            tc.dataset.flop = `left;${flop[1]}`;
-            document.getElementById('flop_right').style.display = 'none';
-            document.getElementById('flop_left').style.display = 'block';
-          } else {
-            tc.style.right = `${flop[1]}px`;
-            tc.style.removeProperty('left');
-            tc.dataset.flop = `right;${flop[1]}`;
-            document.getElementById('flop_right').style.display = 'block';
-            document.getElementById('flop_left').style.display = 'none';
-          }
+          const [dir, toSet] = tc.dataset.flop.split(';');
+          const opDir = dir === 'right' ? 'left' : 'right';
+
+          tc.style[opDir] = `${toSet}px`;
+          tc.style.removeProperty(dir);
+          tc.dataset.flop = `${opDir};${toSet}`;
+          document.getElementById(`flop_${dir}`).style.display = 'none';
+          document.getElementById(`flop_${opDir}`).style.display = 'block';
         };
 
-        document.getElementById('flop').addEventListener('click', flopToolbar);
-        flopToolbar();
+        document.getElementById('flop').addEventListener('click', flipToolbar);
 
+        // shoot, can only reload if we have same image! if selected, can't do!
+        // need to figure out a better way; maybe a load that strips all coordinate data
+        // and allows user to remap to the current map (could be great for swapping out
+        // tilemaps during game development)
         //reload();
 
-        /* shoot, can only reload if we have same image! if selected, can't do!
-        if (annotations && Object.values(annotations).length > 0) {
-          toggleAnnotationMode(true);
-        } else {*/
-          selectBuiltin(0);
-          refreshControls();
-        //}
+        addLoadFileListener();
+        addClickHandlers();
+        addAnnotationHandlers();
+        addModeHandlers();
+        addKeyHandlers();
+        setupBuiltinSelector();
 
+        flipToolbar();
+        selectBuiltin(0);
+        refreshControls();
         render();
-      });
-  
-      const keyAdjIfOk = (dim, adj) => {
-        if (lastClick && dim in lastClick) {
-          const checkCopy = Object.assign({}, lastClick);
-  
-          lastClick[dim] += adj;
-  
-          const cX = lastClick.x * controls.tdim;
-          const cY = lastClick.y * controls.tdim;
-  
-          // check bounds, revert to checkCopy if out-of-bounds
-          if (cX < 0 || cX >= og.width || cY < 0 || cY >= og.height) {
-            lastClick = checkCopy;
-          } else {
-            render();
-          }
-        }
-      }
-  
-      const keyAdjustors = {
-        38: () => keyAdjIfOk('y', -1),  // up
-        40: () => keyAdjIfOk('y', 1),   // down
-        37: () => keyAdjIfOk('x', -1),  // left
-        39: () => keyAdjIfOk('x', 1),   // right
-      };
-  
-      document.addEventListener('keydown', (e) => {
-        if (e.keyCode in keyAdjustors) {
-          keyAdjustors[e.keyCode]();
-          render();
-          return false;
-        }
       });
     </script>
 
@@ -710,7 +785,7 @@
       display: none;
       padding: 0.75em;
       z-index: 20100000;
-      background-color: rgb(10, 10, 64, 0.7);
+      background-color: rgb(10, 10, 64, 0.85);
       border-radius: 0.2em;
       border: 1px solid #cfcfcf;
     }
@@ -732,6 +807,11 @@
 
     #ann_group_new_box {
       text-align: left;
+      padding: 1em 0.7em 1em 0.75em;
+    }
+
+    #ann_group_new_box_name {
+      margin-bottom: 3em;
     }
 
     #reset_cont {
@@ -816,7 +896,7 @@
 
           <div id="ann_group_new_box" class="annotate">
             <label>Group Name:</label>
-            <input type="text" id="ann_group_new_box_name" /><br/><br/>
+            <input type="text" id="ann_group_new_box_name" /><br/>
             <button id="ann_group_new_box_submit" type="submit">Create Group</button>
             <button id="ann_group_new_box_cancel" type="submit">Cancel</button>
           </div>
@@ -5546,5 +5626,7 @@
       </div>
     </div>
   </body>
+
+  <!-- Most-recent source is available at https://github.com/rpj/tmt -->
 
 </html>
