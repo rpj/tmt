@@ -24,6 +24,10 @@
           ctx.lineJoin = 'bevel';
         },
         selectedCanvas: (sCtx) => {
+          sCtx.imageSmoothingEnabled = false;
+          sCtx.shadowOffsetX = sCtx.shadowOffsetY = sCtx.shadowBlur = 0;
+        },
+        selectedCanvasTextTop: (sCtx) => {
           sCtx.fillStyle = 'rgb(10, 10, 64, 1.0)';
           sCtx.font = '16px monospace';
           sCtx.textBaseline = 'top';
@@ -32,7 +36,7 @@
           sCtx.shadowOffsetX = sCtx.shadowOffsetY = 2;
           sCtx.shadowBlur = 2;
         },
-        selectedCanvasText: (sCtx) => {
+        selectedCanvasTextBot: (sCtx) => {
           sCtx.textBaseline = 'bottom';
           sCtx.textAlign = 'end';
         },
@@ -108,16 +112,15 @@
           const sCtx = sCanvas.getContext('2d');
 
           sCtx.clearRect(0, 0, sCanvas.width, sCanvas.height);
-          sCtx.imageSmoothingEnabled = false;
           STYLES.selectedCanvas(sCtx);
-
           sCtx.drawImage(currentMap, lastClick.src.topLeft.x, lastClick.src.topLeft.y, 
             controls.tdim, controls.tdim, 0, 0, sCanvas.width, sCanvas.height);
 
           const _off = 4;
+          STYLES.selectedCanvasTextTop(sCtx);
           sCtx.fillText(`${lastClick.src.topLeft.x}, ${lastClick.src.topLeft.y}`, _off, _off);
 
-          STYLES.selectedCanvasText(sCtx);
+          STYLES.selectedCanvasTextBot(sCtx);
           sCtx.fillText(`${lastClick.src.botRight.x}, ${lastClick.src.botRight.y}`,
             sCanvas.width - _off, sCanvas.height - _off);
 
@@ -141,8 +144,6 @@
               sCtx.fillText(`"${str}"`, _off, sCanvas.height - _off);
             }
           }
-
-          sCtx.shadowOffsetX = sCtx.shadowOffsetY = sCtx.shadowBlur = 0;
         }
       }
   
