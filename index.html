@@ -307,8 +307,18 @@
           canvasClick(e, true);
           document.getElementById('ann_hdr').innerText = document.getElementById('selected').innerText;
           const ann = document.getElementById('annotate');
-          ann.style.top = `${e.y}px`;
-          ann.style.left = `${e.x}px`;
+          let { x, y, pageX, pageY } = e;
+          
+          if (pageY > canvas.height - 200) {
+            y -= 200;
+          }
+
+          if (pageX > canvas.width - 350) {
+            x -= 350;
+          }
+
+          ann.style.top = `${y}px`;
+          ann.style.left = `${x}px`;
           ann.style.display = 'block';
 
           const tileKey = lcTileKey();
