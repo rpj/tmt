@@ -29,7 +29,7 @@
         },
         selectedCanvasTextTop: (sCtx) => {
           sCtx.fillStyle = 'rgb(10, 10, 64, 1.0)';
-          sCtx.font = '16px monospace';
+          sCtx.font = 'bold italic 16px monospace';
           sCtx.textBaseline = 'top';
           sCtx.textAlign = 'start';
           sCtx.shadowColor = 'rgb(245, 245, 245, 0.8)';
@@ -41,12 +41,12 @@
           sCtx.textAlign = 'end';
         },
         selectedCanvasAnnotation: (sCtx) => {
-          sCtx.font = '20px sans-serif';
+          sCtx.font = 'bold 20px sans-serif';
           sCtx.textBaseline = 'bottom';
           sCtx.textAlign = 'start';
         },
         selectedCanvasAnnotationSmall: (sCtx) => {
-          sCtx.font = '14px sans-serif';
+          sCtx.font = 'bold 14px sans-serif';
         }
       };
 
@@ -198,7 +198,8 @@
             return;
           }
 
-          document.getElementById(`${eleName}_lbl`).innerText = ctrlEle.value = controls[ctrlKey];
+          const label = document.getElementById(`${eleName}_lbl`);
+          label.innerText = ctrlEle.value = controls[ctrlKey];
 
           if (!addListener) {
             return;
@@ -213,7 +214,46 @@
 
             controls[ctrlKey] = tryNum;
             render();
-          })
+          });
+
+          let dblClickHandle;
+          label.className = 'dbl_clickable_label';
+          label.addEventListener('click', (e) => {
+            const clear = () => {
+              clearTimeout(dblClickHandle);
+              dblClickHandle = null;
+            };
+
+            if (dblClickHandle) {
+              clear();
+              
+              const labelParent = label.parentElement;
+              const input = document.createElement('input');
+              input.size = 2;
+              input.style.size = `${input.size}0px`;
+              input.style.fontSize = '0.7em';
+
+              labelParent.removeChild(label);
+              labelParent.appendChild(input);
+              input.focus();
+
+              input.addEventListener('change', (e) => {
+                const chkVal = Number.parseInt(e.srcElement.value);
+
+                labelParent.removeChild(input);
+                labelParent.appendChild(label);
+
+                //only change if value is valid & different
+                if (!Number.isNaN(chkVal) && chkVal !== controls[ctrlKey]) {
+                  controls[ctrlKey] = chkVal;
+                  refreshControls(false);
+                  render();
+                }
+              });
+            } else {
+              dblClickHandle = setTimeout(clear, 250);
+            }
+          });
         });
       }
   
@@ -425,6 +465,7 @@
           document.getElementById('ann_box_hdr').innerText = document.getElementById('ann_hdr').innerText;
           ann.style.display = 'none';
           annBox.style.display = 'block';
+          document.getElementById('ann_name').focus();
         });
 
         document.getElementById('ann_group_sel_new').addEventListener('click', (e) => {
@@ -438,6 +479,7 @@
 
           agBox.style.top = `${e.y}px`;
           agBox.style.left = `${setX}px`;
+          document.getElementById('ann_group_new_box_name').focus();
         });
 
         document.getElementById('ann_group_new_box_submit').addEventListener('click', (e) => {
@@ -647,7 +689,9 @@
           render();
         });
 
-        const flipToolbar = () => {
+        const flipToolbar = (e) => {
+          if (e) e.preventDefault();
+
           const tc = document.getElementById('tm_ctrl');
           const [dir, toSet] = tc.dataset.flop.split(';');
           const opDir = dir === 'right' ? 'left' : 'right';
@@ -720,6 +764,7 @@
       padding: 0 1.2em 1.2em 1.2em;
       margin: 0.7em;
       border: 0.5px solid #cfcfcf;
+      min-width: 325px;
     }
 
     #main {
@@ -738,13 +783,22 @@
       text-decoration: underline;
     }
 
-    #selected_canvas {
+    /* adapted from https://stackoverflow.com/a/35362074 */
+    canvas {
+      background-image: linear-gradient(45deg, #909090 25%, transparent 25%), 
+        linear-gradient(-45deg, #909090 25%, transparent 25%), 
+        linear-gradient(45deg, transparent 75%, #909090 75%), 
+        linear-gradient(-45deg, transparent 75%, #909090 75%);
+      background-size: 20px 20px;
+      background-position: 0 0, 0 10px, 10px -10px, -10px 0px;
       background-color: #707070;
+    }
+
+    #selected_canvas {
       border: 1px solid #cfcfcf;
     }
 
     #canvas {
-      background-color: #707070;
       border: 3px solid #cfcfcf;
     }
 
@@ -755,6 +809,7 @@
       display: inline-block;
       text-align: right;
       padding: 0 1em 0 0.5em;
+      user-select: none;
     }
 
     #sel_cont {
@@ -837,6 +892,21 @@
       top: 20px;
       right: 20px;
     }
+
+    .opener_tab {
+      display: inline-flex;
+      flex-direction: row;
+      line-height: 1.75em;
+    }
+
+    .opener_tab_label {
+      font-style: italic;
+      user-select: none;
+    }
+
+    .dbl_clickable_label {
+      text-decoration: dotted underline;
+    }
     </style>
   </head>
 
@@ -845,26 +915,102 @@
       <div id="tm_ctrl" data-flop="left;20">
 
         <a href="#" id="flop">
-          <svg id="flop_left" xmlns="http://www.w3.org/2000/svg" enable-background="new 0 0 24 24" viewBox="0 0 24 24" fill="white" width="18px" height="18px"><rect fill="none" height="24" width="24"/><path d="M8.5,8.62v6.76L5.12,12L8.5,8.62 M10,5l-7,7l7,7V5L10,5z M14,5v14l7-7L14,5z"/></svg>
-          <svg id="flop_right" style="display: none;" xmlns="http://www.w3.org/2000/svg" enable-background="new 0 0 24 24" viewBox="0 0 24 24" fill="white" width="18px" height="18px"><rect fill="none" height="24" transform="matrix(-1 -1.224647e-16 1.224647e-16 -1 24 24)" width="24"/><path d="M15.5,15.38V8.62L18.88,12L15.5,15.38 M14,19l7-7l-7-7V19L14,19z M10,19V5l-7,7L10,19z"/></svg>
+          <svg id="flop_left" xmlns="http://www.w3.org/2000/svg" enable-background="new 0 0 24 24" viewBox="0 0 24 24" fill="white" width="18px" height="18px">
+            <rect fill="none" height="24" width="24"/>
+            <path d="M8.5,8.62v6.76L5.12,12L8.5,8.62 M10,5l-7,7l7,7V5L10,5z M14,5v14l7-7L14,5z"/>
+          </svg>
+          <svg id="flop_right" style="display: none;" xmlns="http://www.w3.org/2000/svg" enable-background="new 0 0 24 24" viewBox="0 0 24 24" fill="white" width="18px" height="18px">
+            <rect fill="none" height="24" transform="matrix(-1 -1.224647e-16 1.224647e-16 -1 24 24)" width="24"/>
+            <path d="M15.5,15.38V8.62L18.88,12L15.5,15.38 M14,19l7-7l-7-7V19L14,19z M10,19V5l-7,7L10,19z"/>
+          </svg>
         </a><br/>
 
-        Load <a href="" id="builtin_source_link" target="_blank">built-in</a>:<br/>
-        <select id="builtins_select"></select>
-        <br/><br/>
+        <div id="loaders_cont">
+          <div id="loaders_tab" class="opener_tab">
+            <a href="#" id="opener_link">
+              <svg id="loaders_open" xmlns="http://www.w3.org/2000/svg" height="24" viewBox="0 0 24 24" width="24">
+                <path d="M0 0h24v24H0z" fill="none"/>
+                <path d="M16.59 8.59L12 13.17 7.41 8.59 6 10l6 6 6-6z" fill="white" />
+              </svg>
 
-        Load from disk:<br/><input type="file" id="load_file" accept="image/*" /><br/>
-        <span id="discl">(never uploaded anywhere)</span>
-        <br/><br/>
+              <svg id="loaders_close" style="display: none" xmlns="http://www.w3.org/2000/svg" height="24" viewBox="0 0 24 24" width="24">
+                <path d="M0 0h24v24H0z" fill="none"/>
+                <path d="M12 8l-6 6 1.41 1.41L12 10.83l4.59 4.58L18 14z" fill="white"/>
+              </svg>
+            </a>
+            <span class="opener_tab_label">Load...</span>
+          </div>
 
-        <label id="tm_ctrl_tdim_lbl"></label><input type="range" min="4" max="256" step="4" id="tm_ctrl_tdim" /><label>tile w/h</label><br/>
-        <label id="tm_ctrl_space_lbl"></label><input type="range" min="0" max="8" id="tm_ctrl_space" /><label>spacing</label><br/>
-        <br/>
-        <label id="tm_ctrl_mult_lbl"></label><input type="range" min="1" max="16" id="tm_ctrl_mult" /><label>zoom</label><br/>
-        <label id="tm_ctrl_lw_lbl"></label><input type="range" min="1" max="3" step="1" id="tm_ctrl_lw" /><label>line width</label><br/>
+          <div id="loaders" style="display: none">
+            <a href="" id="builtin_source_link" target="_blank">Built-in</a>:<br/>
+            <select id="builtins_select"></select>
+            <br/><br/>
 
-        <div id="reset_cont">
-          <button id="reset" type="reset">Reset</button>
+            From disk:<br/><input type="file" id="load_file" accept="image/*" /><br/>
+            <span id="discl">(never uploaded anywhere)</span>
+            <br/><br/>
+          </div>
+
+          <script>
+            document.getElementById('opener_link').addEventListener('click', (e) => {
+              const l = document.getElementById('loaders');
+
+              if (l.style.display === 'none') {
+                document.getElementById('loaders_close').style.display = 'inline-flex';
+                document.getElementById('loaders_open').style.display = 'none';
+              } else {
+                document.getElementById('loaders_open').style.display = 'inline-flex';
+                document.getElementById('loaders_close').style.display = 'none';
+              }
+
+              l.style.display = l.style.display === 'none' ? 'block' : 'none';
+            });
+          </script>
+        </div>
+
+        <div id="ctrls_cont">
+          <div id="ctrls_tab" class="opener_tab">
+            <a href="#" id="ctrls_opener_link">
+              <svg id="ctrls_open" style="display: none" xmlns="http://www.w3.org/2000/svg" height="24" viewBox="0 0 24 24" width="24">
+                <path d="M0 0h24v24H0z" fill="none"/>
+                <path d="M16.59 8.59L12 13.17 7.41 8.59 6 10l6 6 6-6z" fill="white" />
+              </svg>
+
+              <svg id="ctrls_close" xmlns="http://www.w3.org/2000/svg" height="24" viewBox="0 0 24 24" width="24">
+                <path d="M0 0h24v24H0z" fill="none"/>
+                <path d="M12 8l-6 6 1.41 1.41L12 10.83l4.59 4.58L18 14z" fill="white"/>
+              </svg>
+            </a>
+            <span class="opener_tab_label">Controls</span>
+          </div>
+
+          <div id="ctrls_ctrls">
+            <span><label id="tm_ctrl_tdim_lbl"></label></span><input type="range" min="4" max="256" step="4" id="tm_ctrl_tdim" /><label>tile w/h</label><br/>
+            <span><label id="tm_ctrl_space_lbl"></label></span><input type="range" min="0" max="8" id="tm_ctrl_space" /><label>spacing</label><br/>
+            <br/>
+            <span><label id="tm_ctrl_mult_lbl"></label></span><input type="range" min="1" max="16" id="tm_ctrl_mult" /><label>zoom</label><br/>
+            <span><label id="tm_ctrl_lw_lbl"></label></span><input type="range" min="1" max="3" step="1" id="tm_ctrl_lw" /><label>line width</label><br/>
+
+            <div id="reset_cont">
+              <button id="reset" type="reset">Reset</button>
+            </div>
+          </div>
+
+          <script>
+            document.getElementById('ctrls_opener_link').addEventListener('click', (e) => {
+              const l = document.getElementById('ctrls_ctrls');
+
+              if (l.style.display === 'none') {
+                document.getElementById('ctrls_close').style.display = 'inline-flex';
+                document.getElementById('ctrls_open').style.display = 'none';
+              } else {
+                document.getElementById('ctrls_open').style.display = 'inline-flex';
+                document.getElementById('ctrls_close').style.display = 'none';
+              }
+
+              l.style.display = l.style.display === 'none' ? 'block' : 'none';
+            });
+          </script>
         </div>
 
         <div id="sel_cont">
