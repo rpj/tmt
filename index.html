@@ -10,41 +10,37 @@
       let controls, canvas, ctx, og, lastClick, currentMap, annotations, layers = {};
   
       function drawGrid() {
-        const LW = controls.lw;
-        ctx.lineWidth = LW;
-  
         const tPs = (controls.tdim + controls.space) * controls.mult;
-        for (let i = tPs; i < canvas.width; i += tPs) {
-          ctx.strokeStyle = 'magenta';
-          ctx.beginPath();
-          ctx.moveTo(i - (LW / 2), 0);
-          ctx.lineTo(i - (LW / 2), canvas.height);
-          ctx.stroke();
-  
-          if (controls.space > 0) {
-            ctx.strokeStyle = 'magenta';
+        ctx.strokeStyle = 'magenta';
+        ctx.lineWidth = controls.lw;
+
+        const drawCardinal = (northSouth = true) => {
+          const dim = northSouth ? canvas.width : canvas.height;
+          const opDim = northSouth ? canvas.height : canvas.width;
+
+          const drawCardinalLine = (iCoord) => {
             ctx.beginPath();
-            ctx.moveTo(i - (controls.space * controls.mult) - (LW / 2), 0);
-            ctx.lineTo(i - (controls.space * controls.mult) - (LW / 2), canvas.height);
+            if (northSouth) {
+              ctx.moveTo(iCoord, 0);
+              ctx.lineTo(iCoord, opDim);
+            } else {
+              ctx.moveTo(0, iCoord);
+              ctx.lineTo(opDim, iCoord);
+            }
             ctx.stroke();
+          };
+
+          for (let i = tPs; i < dim; i += tPs) {
+            drawCardinalLine(i - (controls.lw / 2));
+
+            if (controls.space > 0) {
+              drawCardinalLine(i - (controls.space * controls.mult) - (controls.lw / 2))
+            }
           }
         }
-  
-        for (let i = tPs; i < canvas.height; i += tPs) {
-          ctx.strokeStyle = 'magenta';
-          ctx.beginPath();
-          ctx.moveTo(0, i - (LW / 2));
-          ctx.lineTo(canvas.width, i - (LW / 2));
-          ctx.stroke();
-  
-          if (controls.space > 0) {
-            ctx.strokeStyle = 'magenta';
-            ctx.beginPath();
-            ctx.moveTo(0, i - (controls.space * controls.mult) - (LW / 2));
-            ctx.lineTo(canvas.width, i - (controls.space * controls.mult) - (LW / 2));
-            ctx.stroke();
-          }
-        }
+
+        drawCardinal(true);
+        drawCardinal(false);
       }
 
       function drawCursor() {
@@ -129,8 +125,7 @@
         const tHeight = Math.floor(og.height / controls.tdim);
         for (let x = 0; x < tWidth; x++) {
           for (let y = 0; y < tHeight; y++) {
-            const tk = tileKey(x, y);
-            const tileLayers = layers[tk];
+            const tileLayers = layers[tileKey(x, y)];
 
             if (tileLayers) {
               const mult = (controls.tdim + controls.space) * controls.mult;
@@ -195,13 +190,10 @@
         document.getElementById('annotate').style.display = 'none';
       }
 
-      function canvasClick(e, indirect = false) {
+      function canvasClick(e) {
           e.preventDefault();
           clearCtxMenu();
-
-          if (!indirect) {
-            hideAnnotateBox();
-          }
+          hideAnnotateBox();
 
           const div = (controls.tdim + controls.space) * controls.mult;
           lastClick = { x: Math.floor(e.offsetX / div), y: Math.floor(e.offsetY / div)};
@@ -304,22 +296,26 @@
 
         canvas.addEventListener('click', canvasClick);
         canvas.addEventListener('contextmenu', (e) => {
-          canvasClick(e, true);
+          canvasClick(e);
           document.getElementById('ann_hdr').innerText = document.getElementById('selected').innerText;
           const ann = document.getElementById('annotate');
           let { x, y, pageX, pageY } = e;
           
-          if (pageY > canvas.height - 200) {
-            y -= 200;
+          const offsets = [];
+          if (pageY > window.innerHeight - 200) {
+            y -= 85;
+            offsets.push('y')
           }
 
-          if (pageX > canvas.width - 350) {
-            x -= 350;
+          if (pageX > window.innerWidth - 350) {
+            x -= 150;
+            offsets.push('x');
           }
 
           ann.style.top = `${y}px`;
           ann.style.left = `${x}px`;
           ann.style.display = 'block';
+          ann.dataset.offsets = JSON.stringify(offsets);
 
           const tileKey = lcTileKey();
           const aAct = document.getElementById('annotate_act');
@@ -352,8 +348,21 @@
           const ann = document.getElementById('annotate');
           const annBox = document.getElementById('annotate_box');
 
-          annBox.style.top = ann.style.top;
-          annBox.style.left = ann.style.left;
+          const annOffsets = JSON.parse(ann.dataset.offsets);
+          let top = Number.parseInt(ann.style.top.replace('px', ''));
+          let left = Number.parseInt(ann.style.left.replace('px', ''));
+
+          if (annOffsets.indexOf('y') !== -1) {
+            top -= 115;
+          }
+
+          if (annOffsets.indexOf('x') !== -1) {
+            left -= 200;
+          }
+
+          annBox.style.top = `${top}px`;
+          annBox.style.left = `${left}px`;
+          ann.dataset.offsets = '[]';
 
           document.getElementById('ann_box_hdr').innerText = document.getElementById('ann_hdr').innerText;
           ann.style.display = 'none';
@@ -700,7 +709,7 @@
       position: fixed;
       display: none;
       padding: 0.75em;
-      z-index: 20000000;
+      z-index: 20100000;
       background-color: rgb(10, 10, 64, 0.7);
       border-radius: 0.2em;
       border: 1px solid #cfcfcf;
