@@ -188,8 +188,9 @@
         Object.keys(controls).forEach(ctrlKey => {
           const eleName = `tm_ctrl_${ctrlKey}`;
           const ctrlEle = document.getElementById(eleName);
+          const isLocked = () => ANNOTATE_MODE && ANNOTATE_MODE_TOGGLES.indexOf(eleName) !== -1;
 
-          if (ANNOTATE_MODE && ANNOTATE_MODE_TOGGLES.indexOf(eleName) !== -1) {
+          if (isLocked()) {
             return;
           }
 
@@ -219,6 +220,10 @@
           let dblClickHandle;
           label.className = 'dbl_clickable_label';
           label.addEventListener('click', (e) => {
+            if (isLocked()) {
+              return;
+            }
+            
             const clear = () => {
               clearTimeout(dblClickHandle);
               dblClickHandle = null;
