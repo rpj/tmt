@@ -640,7 +640,7 @@
           const totalAnnotated = annFlat.length;
           const newRows = Math.floor(Math.sqrt(totalAnnotated));
           const newCols = Math.ceil(totalAnnotated / newRows);
-          const [newWidth, newHeight] = [newRows, newCols].map(x => x * controls.tdim);
+          const [newWidth, newHeight] = [newCols, newRows].map(x => x * controls.tdim);
 
           const newCanvas = document.createElement('canvas');
           document.body.appendChild(newCanvas);
@@ -652,30 +652,30 @@
           const newCtx = newCanvas.getContext('2d');
           newCtx.imageSmoothingEnabled = false;
           
-          for (let row = 0; row < newRows; row++) {
-            for (let col = 0; col < newCols; col++) {
-              const srcTile = annFlat.shift();
-              const newSrcX = row * controls.tdim;
-              const newSrcY = col * controls.tdim;
-              newCtx.drawImage(currentMap, srcTile.x, srcTile.y, controls.tdim, controls.tdim,
-                newSrcX, newSrcY, controls.tdim, controls.tdim);
+          for (let i = 0; i < totalAnnotated; i++) {
+            const row = Math.floor(i / newRows);
+            const col = i % newRows;
+            const srcTile = annFlat.shift();
+            const newSrcX = row * controls.tdim;
+            const newSrcY = col * controls.tdim;
+            newCtx.drawImage(currentMap, srcTile.x, srcTile.y, controls.tdim, controls.tdim,
+              newSrcX, newSrcY, controls.tdim, controls.tdim);
 
-              annCopy[srcTile.group][tileKey(row, col)] = {
-                name: srcTile.name,
-                x: row,
-                y: col,
-                src: {
-                  topLeft: { 
-                    x: newSrcX, 
-                    y: newSrcY
-                  },
-                  botRight: {
-                    x: newSrcX + controls.tdim,
-                    y: newSrcY + controls.tdim
-                  }
+            annCopy[srcTile.group][tileKey(row, col)] = {
+              name: srcTile.name,
+              x: row,
+              y: col,
+              src: {
+                topLeft: { 
+                  x: newSrcX, 
+                  y: newSrcY
+                },
+                botRight: {
+                  x: newSrcX + controls.tdim,
+                  y: newSrcY + controls.tdim
                 }
-              };
-            }
+              }
+            };
           }
 
           newCanvas.toBlob((pngBlob) => {
@@ -1169,9 +1169,9 @@
           </div>
 
           <div id="footer">
-            TMT is entirely self-contained: save as plain HTML to run offline.
+            TMT is self-contained: save as plain HTML to run offline.
             <br/><br/>
-            Inspired by the <a href="https://godotengine.org/" target="_blank">Godot engine</a>.
+            Inspired by the <a href="https://godotengine.org/" target="_blank">Godot</a>.
             Icons courtesy of <a href="https://material.io/resources/icons/" target="_blank">material.io</a>.
           </div>
 

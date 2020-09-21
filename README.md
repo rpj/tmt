@@ -21,7 +21,7 @@ At [GitHub Pages](https://rpj.github.io/tmt/), [itch.io](https://rpjsf.itch.io/t
 
 <p>Right-click any tile to annotate it with a group & name. Once annotation mode has been entered - implicitly by creating the first annotation group - tilemap loading & parameter controls will be locked (though viewport controls will remain available).</p>
 
-<p>In annotation mode, additional controls will become availble beneath the selected view:</p>
+<p>In annotation mode, additional controls will become available beneath the selected view:</p>
 
 <ul>
 <li><b>"Save JSON"</b>: Creates & downloads a JSON file describing the annotated tiles and their positions on the currently-loaded tilemap in both tile-coordinate & pixel-coordinate spaces.</li>
