@@ -578,9 +578,30 @@
           render();
         });
 
-        document.getElementById('mode_save').addEventListener('click', (e) => {
-          const xfAnn = Object.keys(annotations).reduce((acc, annKey) => {
-            acc[annKey] = Object.values(annotations[annKey]).reduce((inAcc, tileObj) => {
+        const saveBlobLocally = (blob, filename, complete) => {
+          const tempA = document.createElement('a');
+          const urlObj = URL.createObjectURL(blob);
+
+          // adapted from https://stackoverflow.com/a/30832210
+          tempA.href = urlObj;
+          tempA.style.display = 'none';
+          tempA.download = filename;
+          document.body.appendChild(tempA);
+          tempA.click();
+          setTimeout(() => {
+            document.body.removeChild(tempA);
+            window.URL.revokeObjectURL(urlObj);
+            if (complete) {
+              complete();
+            }
+          });
+        };
+
+        const filesafeTime = () => (new Date()).toISOString().replace(/[\-:\.]/g, '');
+
+        const xformAnnotationsForSave = (ann) => {
+          return Object.keys(ann).reduce((acc, annKey) => {
+            acc[annKey] = Object.values(ann[annKey]).reduce((inAcc, tileObj) => {
               const tileName = tileObj.name;
               const newObj = Object.assign({}, tileObj);
               delete newObj.name;
@@ -589,20 +610,80 @@
             }, {});
             return acc;
           }, {});
+        };
 
+        const saveAnnotationsLocally = (ann, fTime) => {
+          if (!fTime) {
+            fTime = filesafeTime();
+          }
+
+          const xfAnn = xformAnnotationsForSave(ann);
           const blob = new Blob([JSON.stringify(xfAnn)], { type: 'text/json' });
-          const tempA = document.createElement('a');
-          const urlObj = URL.createObjectURL(blob);
+          saveBlobLocally(blob, `tmt-annotations-${fTime}.json`);
+        }
 
-          // adapted from https://stackoverflow.com/a/30832210
-          tempA.href = urlObj;
-          tempA.style.display = 'none';
-          tempA.download = `tilemaptool-annotations-${(new Date()).toISOString().replace(/[\-:\.]/g, '')}.json`;
-          document.body.appendChild(tempA);
-          tempA.click();
-          setTimeout(() => {
-            document.body.removeChild(tempA);
-            window.URL.revokeObjectURL(urlObj);
+        document.getElementById('mode_save').addEventListener('click', (e) => {
+          saveAnnotationsLocally(annotations);
+        });
+
+        document.getElementById('mode_export').addEventListener('click', (e) => {
+          const annCopy = Object.keys(annotations).reduce((acc, g) => ({[g]: {}, ...acc}), {});
+          const annFlat = Object.keys(annotations).sort().reduce((acc, group) => {
+            Object.keys(annotations[group]).sort().forEach((tileKey) => {
+              const { x, y } = annotations[group][tileKey].src.topLeft;
+              acc.push({ group, name: annotations[group][tileKey].name, x, y });
+            });
+
+            return acc;
+          }, []);
+
+          const totalAnnotated = annFlat.length;
+          const newRows = Math.floor(Math.sqrt(totalAnnotated));
+          const newCols = Math.ceil(totalAnnotated / newRows);
+          const [newWidth, newHeight] = [newRows, newCols].map(x => x * controls.tdim);
+
+          const newCanvas = document.createElement('canvas');
+          document.body.appendChild(newCanvas);
+
+          newCanvas.style.display = 'none';
+          newCanvas.width = newWidth;
+          newCanvas.height = newHeight;
+
+          const newCtx = newCanvas.getContext('2d');
+          newCtx.imageSmoothingEnabled = false;
+          
+          for (let row = 0; row < newRows; row++) {
+            for (let col = 0; col < newCols; col++) {
+              const srcTile = annFlat.shift();
+              const newSrcX = row * controls.tdim;
+              const newSrcY = col * controls.tdim;
+              newCtx.drawImage(currentMap, srcTile.x, srcTile.y, controls.tdim, controls.tdim,
+                newSrcX, newSrcY, controls.tdim, controls.tdim);
+
+              annCopy[srcTile.group][tileKey(row, col)] = {
+                name: srcTile.name,
+                x: row,
+                y: col,
+                src: {
+                  topLeft: { 
+                    x: newSrcX, 
+                    y: newSrcY
+                  },
+                  botRight: {
+                    x: newSrcX + controls.tdim,
+                    y: newSrcY + controls.tdim
+                  }
+                }
+              };
+            }
+          }
+
+          newCanvas.toBlob((pngBlob) => {
+            const fTime = filesafeTime();
+            saveBlobLocally(pngBlob, `tmt-exportedmap-${fTime}.png`, () => {
+              document.body.removeChild(newCanvas);
+              saveAnnotationsLocally(annCopy, fTime);
+            });
           });
         });
       }
@@ -770,6 +851,7 @@
       margin: 0.7em;
       border: 0.5px solid #cfcfcf;
       min-width: 325px;
+      max-width: 325px;
     }
 
     #main {
@@ -794,8 +876,8 @@
         linear-gradient(-45deg, #909090 25%, transparent 25%), 
         linear-gradient(45deg, transparent 75%, #909090 75%), 
         linear-gradient(-45deg, transparent 75%, #909090 75%);
-      background-size: 20px 20px;
-      background-position: 0 0, 0 10px, 10px -10px, -10px 0px;
+      background-size: 16px 16px;
+      background-position: 0 0, 0 8px, 8px -8px, -8px 0px;
       background-color: #707070;
     }
 
@@ -835,7 +917,8 @@
     }
 
     #footer {
-      font-size: 0.8em;
+      font-size: 0.7em;
+      font-style: italic;
       padding-top: 2em;
       display: block;
       color: #cfcfcf;
@@ -884,7 +967,7 @@
       display: none; 
       width: 100%; 
       text-align: right;
-      padding-bottom: 1em;
+      text-align: center;
     }
 
     #ann_mode_controls h5 {
@@ -895,6 +978,18 @@
     #flop {
       position: absolute;
       top: 20px;
+      right: 20px;
+    }
+
+    #help_button {
+      position: absolute;
+      top: 44px;
+      right: 18px;
+    }
+
+    #help_button_inner {
+      position: absolute;
+      top: 24px;
       right: 20px;
     }
 
@@ -911,6 +1006,26 @@
 
     .dbl_clickable_label {
       text-decoration: dotted underline;
+    }
+
+    #help_pane {
+      position: fixed;
+      top: 20px;
+      left: 20px;
+      max-width: 500px;
+      text-align: left;
+      padding: 1.5em;
+      background-color: rgb(10, 10, 64, 0.9);
+    }
+
+    #help_pane h3 {
+      text-decoration: underline;
+      font-variant: small-caps;
+      margin-top: 0;
+    }
+
+    #help_pane_text {
+      font-family: Georgia, 'Times New Roman', Times, serif;
     }
     </style>
   </head>
@@ -943,7 +1058,7 @@
                 <path d="M12 8l-6 6 1.41 1.41L12 10.83l4.59 4.58L18 14z" fill="white"/>
               </svg>
             </a>
-            <span class="opener_tab_label">Load...</span>
+            <span class="opener_tab_label">Load:</span>
           </div>
 
           <div id="loaders" style="display: none">
@@ -957,39 +1072,44 @@
           </div>
 
           <script>
-            document.getElementById('opener_link').addEventListener('click', (e) => {
-              const l = document.getElementById('loaders');
+            function addTabToggler(linkName, mainElementName, closeEleName, openEleName) {
+              document.getElementById(linkName).addEventListener('click', (e) => {
+                e.preventDefault();
+                const l = document.getElementById(mainElementName);
 
-              if (l.style.display === 'none') {
-                document.getElementById('loaders_close').style.display = 'inline-flex';
-                document.getElementById('loaders_open').style.display = 'none';
-              } else {
-                document.getElementById('loaders_open').style.display = 'inline-flex';
-                document.getElementById('loaders_close').style.display = 'none';
-              }
+                if (l.style.display === 'none') {
+                  document.getElementById(closeEleName).style.display = 'inline-flex';
+                  document.getElementById(openEleName).style.display = 'none';
+                } else {
+                  document.getElementById(openEleName).style.display = 'inline-flex';
+                  document.getElementById(closeEleName).style.display = 'none';
+                }
 
-              l.style.display = l.style.display === 'none' ? 'block' : 'none';
-            });
+                l.style.display = l.style.display === 'none' ? 'block' : 'none';
+              });
+            }
+
+            addTabToggler('opener_link', 'loaders', 'loaders_close', 'loaders_open');
           </script>
         </div>
 
         <div id="ctrls_cont">
           <div id="ctrls_tab" class="opener_tab">
             <a href="#" id="ctrls_opener_link">
-              <svg id="ctrls_open" style="display: none" xmlns="http://www.w3.org/2000/svg" height="24" viewBox="0 0 24 24" width="24">
+              <svg id="ctrls_open" xmlns="http://www.w3.org/2000/svg" height="24" viewBox="0 0 24 24" width="24">
                 <path d="M0 0h24v24H0z" fill="none"/>
                 <path d="M16.59 8.59L12 13.17 7.41 8.59 6 10l6 6 6-6z" fill="white" />
               </svg>
 
-              <svg id="ctrls_close" xmlns="http://www.w3.org/2000/svg" height="24" viewBox="0 0 24 24" width="24">
+              <svg id="ctrls_close" style="display: none" xmlns="http://www.w3.org/2000/svg" height="24" viewBox="0 0 24 24" width="24">
                 <path d="M0 0h24v24H0z" fill="none"/>
                 <path d="M12 8l-6 6 1.41 1.41L12 10.83l4.59 4.58L18 14z" fill="white"/>
               </svg>
             </a>
-            <span class="opener_tab_label">Controls</span>
+            <span class="opener_tab_label">Controls:</span>
           </div>
 
-          <div id="ctrls_ctrls">
+          <div id="ctrls_ctrls" style="display: none">
             <span><label id="tm_ctrl_tdim_lbl"></label></span><input type="range" min="4" max="256" step="4" id="tm_ctrl_tdim" /><label>tile w/h</label><br/>
             <span><label id="tm_ctrl_space_lbl"></label></span><input type="range" min="0" max="8" id="tm_ctrl_space" /><label>spacing</label><br/>
             <br/>
@@ -1002,19 +1122,7 @@
           </div>
 
           <script>
-            document.getElementById('ctrls_opener_link').addEventListener('click', (e) => {
-              const l = document.getElementById('ctrls_ctrls');
-
-              if (l.style.display === 'none') {
-                document.getElementById('ctrls_close').style.display = 'inline-flex';
-                document.getElementById('ctrls_open').style.display = 'none';
-              } else {
-                document.getElementById('ctrls_open').style.display = 'inline-flex';
-                document.getElementById('ctrls_close').style.display = 'none';
-              }
-
-              l.style.display = l.style.display === 'none' ? 'block' : 'none';
-            });
+            addTabToggler('ctrls_opener_link', 'ctrls_ctrls', 'ctrls_close', 'ctrls_open');
           </script>
         </div>
 
@@ -1055,15 +1163,59 @@
 
           <div id="ann_mode_controls">
             <h5>Annotations:</h5>
-            <button id="mode_save">Save</button>
+            <button id="mode_save">Save JSON</button>
+            <button id="mode_export">Export new</button>
             <button id="mode_exit">Discard</button>
           </div>
 
           <div id="footer">
-            TMT is <i>entirely</i> self-contained: save<br/>
-            as plain HTML to run locally &amp; offline
+            TMT is entirely self-contained: save as plain HTML to run offline.
             <br/><br/>
-            inspired by the <a href="https://godotengine.org/" target="_blank">godot engine</a>
+            Inspired by the <a href="https://godotengine.org/" target="_blank">Godot engine</a>.
+            Icons courtesy of <a href="https://material.io/resources/icons/" target="_blank">material.io</a>.
+          </div>
+
+          <a href="#" id="help_button">
+            <svg xmlns="http://www.w3.org/2000/svg" height="24" viewBox="0 0 24 24" width="24">
+              <path d="M0 0h24v24H0z" fill="none"/>
+              <path fill="rgba(255, 255, 255, 0.5)" d="M11 18h2v-2h-2v2zm1-16C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm0 18c-4.41 0-8-3.59-8-8s3.59-8 8-8 8 3.59 8 8-3.59 8-8 8zm0-14c-2.21 0-4 1.79-4 4h2c0-1.1.9-2 2-2s2 .9 2 2c0 2-3 1.75-3 5h2c0-2.25 3-2.5 3-5 0-2.21-1.79-4-4-4z"/>
+            </svg>
+          </a>
+
+          <script>
+            window.addEventListener('load', async () => {
+              const helpPane = document.getElementById('help_pane');
+              const toggler = (_) => {
+                helpPane.style.display = helpPane.style.display === 'none' ? 'block' : 'none';
+              };
+
+              document.getElementById('help_button').addEventListener('click', toggler);
+              document.getElementById('help_button_inner').addEventListener('click', toggler);
+
+              let resp = await fetch('https://raw.githubusercontent.com/rpj/tmt/main/README.md');
+
+              if (resp.ok) {
+                document.getElementById('help_pane_text').innerHTML = (await resp.text()).split('## Usage')[1].split('## Screenshots')[0];
+              } else {
+                document.getElementById('help_load_failed').style.display = 'block';
+              }
+            });
+          </script>
+
+          <div id="help_pane" class="annotate" style="display: none;">
+            <a href="#" id="help_button_inner">
+              <svg xmlns="http://www.w3.org/2000/svg" height="24" viewBox="0 0 24 24" width="24">
+                <path d="M0 0h24v24H0z" fill="none"/>
+                <path fill="rgba(255, 255, 255, 0.5)" d="M14.59 8L12 10.59 9.41 8 8 9.41 10.59 12 8 14.59 9.41 16 12 13.41 14.59 16 16 14.59 13.41 12 16 9.41 14.59 8zM12 2C6.47 2 2 6.47 2 12s4.47 10 10 10 10-4.47 10-10S17.53 2 12 2zm0 18c-4.41 0-8-3.59-8-8s3.59-8 8-8 8 3.59 8 8-3.59 8-8 8z"/>
+              </svg>
+            </a>
+
+            <h3>Usage Information</h3>
+            <div id="help_pane_text"></div>
+            <div id="help_load_failed" style="display: none;">
+              Unable to load most-recent help!<br/>
+              Try navigating <a href="https://github.com/rpj/tmt/blob/main/README.md#usage" target="_blank">here</a> directly.
+            </div>
           </div>
         </div>
       </div>
@@ -5778,7 +5930,4 @@
       </div>
     </div>
   </body>
-
-  <!-- Most-recent source is available at https://github.com/rpj/tmt -->
-
 </html>
